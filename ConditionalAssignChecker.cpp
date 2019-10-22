@@ -177,13 +177,6 @@ void WalkAST::reportBugPtr(const Stmt *S) {
 		  ELoc, S->getSourceRange());
 }
 
-/*void WalkAST::printExpr(Expr *E) {
-  SourceRange range = E->getSourceRange();
-  SourceManager* SM = &(AC->getASTContext().getSourceManager());
-  llvm::StringRef ref = Lexer::getSourceText(CharSourceRange::getCharRange(range), *SM, LangOptions());
-  std::cout << ref.str() << std::endl;
-}*/
-
 namespace {
 class ConditionalAssignChecker : public Checker<check::ASTCodeBody> {
 public :
