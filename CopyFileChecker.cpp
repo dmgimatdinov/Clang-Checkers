@@ -16,68 +16,14 @@ using namespace clang;
 using namespace ento;
 
 namespace {
-class CopyFileChecker: public Checker <check::PreStmt<DeclStmt>,
-                                      check::PreCall,
-                                      //check::BranchCondition>{
-                                      check::PostStmt<CallExpr>>{
+class CopyFileChecker: public Checker <check::PostStmt<CallExpr>>{
    mutable std::unique_ptr<BuiltinBug> BT;
    void reportBug(const Expr *E, CheckerContext &C) const;
    void reportBug(const char *Msg, const Expr *E, CheckerContext &C) const;
-   void reportBug(SVal S, const Expr *E, CheckerContext &C) const;
  
  public:
-   void checkPreStmt(const DeclStmt *DS, CheckerContext &C) const;
    void checkPostStmt(const CallExpr *CE, CheckerContext &C) const;
-   //void checkPreStmt(const BinaryOperator *B, CheckerContext &C) const;
-   void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
-
  };
-}
-
-void CopyFileChecker::checkPreStmt(const DeclStmt *DS,
-                                   CheckerContext &C) const {
-    if (const VarDecl *VD = dyn_cast<VarDecl>(DS->getSingleDecl())) {
-        //if (VD->getType().getAsString() != "FILE")
-          //  return;
-        if (const Expr *E = VD->getInit()) {
-            // check for c code
-            if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E)) {
-                if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(ICE->getSubExpr())) {
-                    if (const ImplicitCastExpr *ICE_UO = dyn_cast<ImplicitCastExpr>(UO->getSubExpr())) {
-                        if (const DeclRefExpr *REF = dyn_cast<DeclRefExpr>(ICE_UO->getSubExpr())) {
-                            if (REF->getExprLoc().isMacroID()) {
-                                StringRef MacroName = Lexer::getImmediateMacroName(
-                                        REF->getExprLoc(), C.getAnalysisManager().getSourceManager(), 
-                                        C.getAnalysisManager().getASTContext().getLangOpts());
-                                if (MacroName == "stdout") {
-                                    //reportBug(REF, C);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            //check for c++ code
-            /*if (const CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(E)) {
-                if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(CCE->getArgs())) {
-                    if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(ICE->getSubExpr())) {
-                        if (const ImplicitCastExpr *ICE_UO = dyn_cast<ImplicitCastExpr>(UO->getSubExpr())) {
-                            if (const DeclRefExpr *REF = dyn_cast<DeclRefExpr>(ICE_UO->getSubExpr())) {
-                                if (REF->getExprLoc().isMacroID()) {
-                                    StringRef MacroName = Lexer::getImmediateMacroName(
-                                            REF->getExprLoc(), C.getAnalysisManager().getSourceManager(), 
-                                            C.getAnalysisManager().getASTContext().getLangOpts());
-                                    if (MacroName == "stdout") {
-                                        reportBug(REF, C);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }*/
-        }
-    }
 }
 
 void CopyFileChecker::checkPostStmt(const CallExpr *CE,
@@ -90,23 +36,56 @@ void CopyFileChecker::checkPostStmt(const CallExpr *CE,
         const Expr *E = CE->getArg(i);
         if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(E)) {
             if (const DeclRefExpr *REF = dyn_cast<DeclRefExpr>(UO->getSubExpr())) {
-                reportBug(REF->getNameInfo().getAsString().c_str(),REF, C);
+                if (REF->getType().getAsString() == "FILE") {
+                    if (const VarDecl *VD = dyn_cast<VarDecl>(REF->getDecl())) {
+                        if (const Expr *E = VD->getInit()) {
+                            // check c code
+                            if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E)) {
+                                if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(ICE->getSubExpr())) {
+                                    if (const ImplicitCastExpr *ICE_UO = dyn_cast<ImplicitCastExpr>(UO->getSubExpr())) {
+                                        if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(ICE_UO->getSubExpr())) {
+                                            if (DRE->getExprLoc().isMacroID()) {
+                                                StringRef MacroName = Lexer::getImmediateMacroName(
+                                                        DRE->getExprLoc(), C.getAnalysisManager().getSourceManager(), 
+                                                        C.getAnalysisManager().getASTContext().getLangOpts());
+                                                if (MacroName == "stdout") {
+                                                    //reportBug(std::to_string(C.getSourceManager().getExpansionLineNumber(
+                                                                   // DRE->getExprLoc())).c_str(), DRE, C);
+                                                    reportBug(DRE, C);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }   
+                            // check c++ code
+                            if (const CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(E)) {
+                                for (const Stmt *S : CCE->children()) {
+                                    if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(S)) {
+                                        if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(ICE->getSubExpr())) {
+                                            if (const ImplicitCastExpr *ICE_UO = dyn_cast<ImplicitCastExpr>(UO->getSubExpr())) {
+                                                if (const DeclRefExpr *DRE= dyn_cast<DeclRefExpr>(ICE_UO->getSubExpr())) {
+                                                    if (DRE->getExprLoc().isMacroID()) {
+                                                        StringRef MacroName = Lexer::getImmediateMacroName(
+                                                                DRE->getExprLoc(), C.getAnalysisManager().getSourceManager(), 
+                                                                C.getAnalysisManager().getASTContext().getLangOpts());
+                                                        if (MacroName == "stdout") {
+                                                            reportBug(DRE, C);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }   
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
-
-void CopyFileChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
-    /*for (const ParmVarDecl *Param : Call.parameters()) {
-        std::string ParamTypeStr = Param->getType().getAsString();
-        //reportBug(ParamTypeStr.c_str(), Call.getOriginExpr(), C);
-        reportBug(ParamTypeStr.c_str(), Param->getDefaultArg(), C);
-        if(ParamTypeStr == "const struct __sFILE &") {
-            ProgramStateRef State = C.getState();
-        }
-    }*/
-}
-
 
 void CopyFileChecker::reportBug(const Expr *E, CheckerContext &C) const {
     if (ExplodedNode *N = C.generateNonFatalErrorNode()) {
@@ -131,19 +110,6 @@ void CopyFileChecker::reportBug(const char *Msg, const Expr *E, CheckerContext &
     }
 }
 
-
-void CopyFileChecker::reportBug(SVal S, const Expr *E, CheckerContext &C) const {
-    if (ExplodedNode *N = C.generateNonFatalErrorNode()) {
-        if (!BT)
-            BT.reset(new BuiltinBug(this, "copy a FILE object", 
-                        "Do not copy a FILE object"));
-            auto R = llvm::make_unique<BugReport>(*BT, BT->getDescription(), N);
-            R->addRange(E->getSourceRange());
-            R->markInteresting(S);
-            C.emitReport(std::move(R));
-    }
-}
-
 void ento::registerCopyFileChecker(CheckerManager &mgr) {
     mgr.registerChecker<CopyFileChecker>();
 }
@@ -151,4 +117,3 @@ void ento::registerCopyFileChecker(CheckerManager &mgr) {
 bool ento::shouldRegisterCopyFileChecker(const LangOptions &LO) {
     return true;
 }
-
