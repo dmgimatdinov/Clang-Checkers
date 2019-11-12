@@ -1,22 +1,20 @@
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
-#include "clang/AST/ASTImporter.h"
-#include "clang/AST/StmtVisitor.h"
-#include "clang/AST/Decl.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/DeclBase.h"
 
-#include "clang/Lex/Lexer.h"
-#include "clang/Basic/SourceManagerInternals.h"
+#include <string>
+#include <regex>
 
 using namespace clang;
 using namespace ento;
 
 namespace {
 class DeclVisitor : public clang::RecursiveASTVisitor<DeclVisitor> {
-
   AnalysisManager& MGR;
   BugReporter &BR;
   AnalysisDeclContext* AC;
@@ -31,15 +29,19 @@ public :
   bool VisitFunctionDecl(const FunctionDecl *FD);
 
 private:
-  // Helpers
+  bool isReserved(std::string DeclName);
+  std::string getHeaderName(std::string headerPath);
   void reportBug(const Decl *D);
   void reportBug(std::string Msg, const Decl *D);
   void reportBug(StringRef Msg, const Decl *D);
 };
 }
 
+// Declaration visitor methods
 bool DeclVisitor::VisitFunctionDecl(const FunctionDecl *FD) {
   SourceManager &sm= MGR.getSourceManager();
+  if (!sm.isInMainFile(FD->getLocation()))
+      return true;
   FileID mainFileID = sm.getMainFileID();
   for (auto it = sm.fileinfo_begin(); it != sm.fileinfo_end(); it++) {
       SourceLocation includeLoc = sm.getIncludeLoc(sm.translateFile(it->first));
@@ -51,8 +53,23 @@ bool DeclVisitor::VisitFunctionDecl(const FunctionDecl *FD) {
 }
 
 bool DeclVisitor::VisitVarDecl(const VarDecl *VD) {
-  return true;
+  if (VD->getLinkageInternal() == ExternalLinkage)
+      reportBug(VD);
+    return true;
 }    
+
+std::string DeclVisitor::getHeaderName(std::string headerPath) {
+    std::regex reg("[a-z]+\\.h");
+    std::smatch match_reg;
+    std::regex_search(headerPath, match_reg, reg);
+
+    return match_reg.str();
+}
+
+bool DeclVisitor::isReserved(std::string DeclName) {
+    if (DeclName.starts_with("_")) // C++20 
+        return true;
+}
 
 void DeclVisitor::reportBug(const Decl *D) {
   PathDiagnosticLocation ELoc =
